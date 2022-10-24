@@ -1,0 +1,58 @@
+version: '3'
+
+services:
+  web1:
+    build: ./httpd
+    container_name: web1
+    volumes:
+      - ./volume/html:/var/www/html
+    logging:
+      driver: "fluentd"
+      options:
+        fluentd-address: "localhost:24220"
+        tag: "docker.{{.Name}}"
+    restart: always
+    depends_on:
+      - fluentd
+
+  web2:
+    build: ./httpd
+    container_name: web2
+    volumes:
+      - ./volume/html:/var/www/html
+    logging:
+      driver: "fluentd"
+      options:
+        fluentd-address: "localhost:24220"
+        tag: "docker.{{.Name}}"
+    restart: always
+    depends_on:
+      - fluentd
+  
+  fluentd:
+    image: fluent/fluentd
+    container_name: fluent
+    volumes:
+      - ./fluentd/conf:/fluentd/etc
+      - ./volume/logs/fluentd:/var/log/fluentd
+    ports:
+      - "24220:24220"
+      - "24220:24220/udp"
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    ports:
+      - "10080:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+    logging:
+      driver: "fluentd"
+      options:
+        fluentd-address: "localhost:24220"
+        tag: "docker.{{.Name}}"
+    depends_on:
+      - web1
+      - web2
+      - fluentd
+    
