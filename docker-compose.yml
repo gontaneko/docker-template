@@ -1,43 +1,89 @@
 version: '3'
 
+x-logging:
+  &default-json-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "1"
+
 services:
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch-oss:7.10.2
+    container_name: elasticsearch
+    restart: always
+    expose:
+      - "9200"
+      - "9300"
+    environment:
+      discovery.type: "single-node"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    logging: *default-json-logging
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana-oss:7.10.2
+    container_name: kibana
+    restart: always
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+    links:
+      - elasticsearch:elasticsearch
+    logging: *default-json-logging
+
+  fluentd:
+    build:
+      context: ./fluentd
+      dockerfile: Dockerfile
+    container_name: fluentd
+    image: custom-fluentd:latest
+    ports:
+      - "24224:24224"
+    volumes:
+      - ./fluentd/fluent.conf:/fluentd/etc/fluent.conf:ro
+    depends_on:
+      - elasticsearch
+    logging: *default-json-logging
+
   web1:
-    build: ./httpd
+    build: 
+      context: ./httpd
+      dockerfile: Dockerfile
     container_name: web1
     volumes:
       - ./volume/html:/var/www/html
     logging:
       driver: "fluentd"
       options:
-        fluentd-address: "localhost:24220"
+        fluentd-address: "localhost:24224"
         tag: "docker.{{.Name}}"
     restart: always
     depends_on:
       - fluentd
 
   web2:
-    build: ./httpd
+    build: 
+      context: ./httpd
+      dockerfile: Dockerfile
     container_name: web2
     volumes:
       - ./volume/html:/var/www/html
     logging:
       driver: "fluentd"
       options:
-        fluentd-address: "localhost:24220"
+        fluentd-address: "localhost:24224"
         tag: "docker.{{.Name}}"
     restart: always
     depends_on:
       - fluentd
-  
-  fluentd:
-    image: fluent/fluentd
-    container_name: fluent
-    volumes:
-      - ./fluentd/conf:/fluentd/etc
-      - ./volume/logs/fluentd:/var/log/fluentd
-    ports:
-      - "24220:24220"
-      - "24220:24220/udp"
 
   nginx:
     image: nginx:alpine
@@ -49,10 +95,14 @@ services:
     logging:
       driver: "fluentd"
       options:
-        fluentd-address: "localhost:24220"
+        fluentd-address: "localhost:24224"
         tag: "docker.{{.Name}}"
     depends_on:
       - web1
       - web2
       - fluentd
+
+volumes:
+  elasticsearch-data:
+    driver: local
     
